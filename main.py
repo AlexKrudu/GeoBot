@@ -32,10 +32,20 @@ def get_bounds(toponym):
     return delta, delta1
 
 
+starting_keyboard = [["/start"]]
+start_mkup = ReplyKeyboardMarkup(starting_keyboard, one_time_keyboard=True)
+
 reply_keyboard = [['/start_game']]
 markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
 
-def start(bot, update):
+
+cont_keyboard = [["/continue"], ["/stop"]]
+cont_markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+
+
+
+def start(bot, update, user_data):
+    user_data["current_level"] = 0
     update.message.reply_text("Привет! Я - бот GeoGuesser, я вам показываю панораму, а вы должны угадать, в каком месте (на карте) была снята эта панорама. Если вы готовы - нажмите кнопку '/start_game'.", reply_markup=markup)
     return 1
 
@@ -47,8 +57,12 @@ arrow_markup = ReplyKeyboardMarkup(arrows, one_time_keyboard=False)
 marker = [["↑"], ["←", "↓", "→"], ["/Increase_Scale","/Confirm", "/Decrease_Scale"]]
 markupper =  ReplyKeyboardMarkup(marker, one_time_keyboard=False)
 
+
 def start_game(bot, update, user_data):
-    update.message.reply_text("Начнем!")
+    user_data["current_level"] += 1
+    if user_data["current_level"] == 1:
+        user_data["current_score"] = 0
+    update.message.reply_text("Начнем уровень {}!".format(user_data["current_level"]))
     while True:
         latt = random.uniform(-122.807306,-67.022079)
         lon = random.uniform(31.892418, 48.991140)
@@ -184,6 +198,14 @@ def Confirm(bot, update, user_data):
         photo=open(map_file, 'rb'),
         caption="Вы ошиблись на {} километров".format(mistake))
 
+    score = round(1 - (mistake / 20000), 2) * 100 # 20000 - это максимальная величина, на которую можно ошибиться
+    user_data["current_score"] += score
+    if user_data["current_level"] == 5:
+        update.message.reply_text("Неплохо поиграли! Вы набрали всего {} очков. Если хотите сыграть еще раз, нажмите /start.".format(int(user_data["current_score"])), reply_markup=start_mkup)
+        return ConversationHandler.END
+    update.message.reply_text("Давайте продолжим!",reply_markup=markup)
+    return 1
+
 
 
 def handle_marker_direction(bot, update, user_data):
@@ -274,7 +296,7 @@ def main():
     dp = updater.dispatcher
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[CommandHandler("start", start, pass_user_data=True)],
         states={
             1: [CommandHandler("start_game", start_game, pass_user_data=True)],
             2: [MessageHandler(Filters.text, handle_direction, pass_user_data=True), CommandHandler("answer", answer, pass_user_data=True)],
