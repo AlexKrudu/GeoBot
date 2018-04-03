@@ -106,16 +106,33 @@ def stop(bot, update):
 
 
 def handle_direction(bot, update, user_data):
+    d = 0.0002
     google_server = "https://maps.googleapis.com/maps/api/streetview?"
     direction = update.message.text
     if direction == "←":
-        if user_data["current_params"]["heading"] == "360":
-            user_data["current_params"]["heading"] = "0"
-        user_data["current_params"]["heading"] = str(int(user_data["current_params"]["heading"]) - 30)
-    elif direction == "→":
         if user_data["current_params"]["heading"] == "0":
             user_data["current_params"]["heading"] = "360"
+        user_data["current_params"]["heading"] = str(int(user_data["current_params"]["heading"]) - 30)
+    elif direction == "→":
+        if user_data["current_params"]["heading"] == "360":
+            user_data["current_params"]["heading"] = "0"
         user_data["current_params"]["heading"] = str(int(user_data["current_params"]["heading"]) + 30)
+
+    elif direction == "↑":
+        y = d * math.cos(math.radians(int(user_data["current_params"]["heading"])))
+        x = d * math.sin(math.radians(int(user_data["current_params"]["heading"])))
+        loc = user_data["current_params"]["location"].split(",")
+        loc[0] = float(loc[0]) + y
+        loc[1] = float(loc[1]) + x
+        user_data["current_params"]["location"] = ",".join([str(i) for i in loc])
+
+    elif direction == "↓":
+        y = - (d * math.cos(math.radians(int(user_data["current_params"]["heading"]))))
+        x = - (d * math.sin(math.radians(int(user_data["current_params"]["heading"]))))
+        loc = user_data["current_params"]["location"].split(",")
+        loc[0] = float(loc[0]) + y
+        loc[1] = float(loc[1]) + x
+        user_data["current_params"]["location"] = ",".join([str(i) for i in loc])
 
     request = requests.get(google_server, params=user_data["current_params"])
     map_file = "photos/map.png"
