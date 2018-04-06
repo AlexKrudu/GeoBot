@@ -1,6 +1,5 @@
 from telegram.ext import Updater, MessageHandler, Filters, CommandHandler, ConversationHandler
 from telegram import ReplyKeyboardRemove
-from telegram import ReplyKeyboardMarkup
 import requests
 import random
 import sys
@@ -46,7 +45,7 @@ def lonlat_distance(a, b):
 def get_bounds(toponym):
     bounds = toponym["boundedBy"]["Envelope"]["lowerCorner"].split(), toponym["boundedBy"]["Envelope"][
         "upperCorner"].split()
-    koef = 3 # Подобран опытным путем
+    koef = 3   # Подобран опытным путем
     delta = str((float(bounds[1][0]) - float(bounds[0][0])) / koef)
     delta1 = str((float(bounds[1][1]) - float(bounds[0][1])) / koef)
     return delta, delta1
@@ -67,13 +66,13 @@ def start_game(bot, update, user_data):
         user_data["current_score"] = 0
     update.message.reply_text("Начнем уровень {}!".format(user_data["current_level"]))
     while True:
-        latt = random.uniform(-122.807306,-67.022079)
+        latt = random.uniform(-122.807306, -67.022079)
         lon = random.uniform(31.892418, 48.991140)
         user_data["current_params"] = {
-            "location" : ",".join([str(lon), str(latt)]),
-            "key" : "AIzaSyAFrWov6xiIgUQwx9YAiPXcNV2qw7BFuZ0",
-            "size" : "640x640",
-            "heading" : "0"
+            "location": ",".join([str(lon), str(latt)]),
+            "key": "AIzaSyAFrWov6xiIgUQwx9YAiPXcNV2qw7BFuZ0",
+            "size": "640x640",
+            "heading": "0"
         }
         try:
             response = requests.get(google_data, params=user_data["current_params"])
@@ -149,6 +148,7 @@ def handle_direction(bot, update, user_data):
         photo=open(panoram_image, 'rb'),
         caption="Если вы готовы дать ответ, нажмите кнопку /answer")
 
+
 def draw_map(params):
     try:
         request = requests.get(static_maps, params=params)
@@ -211,24 +211,27 @@ def Confirm(bot, update, user_data):
         photo=open(map_image, 'rb'),
         caption="Вы ошиблись на {} километров".format(mistake))
 
-    score = round(1 - (mistake / 20000), 2) * 100 # 20000 - это максимальная величина, на которую можно ошибиться
+    score = round(1 - (mistake / 20000), 2) * 100   # 20000 - это максимальная величина, на которую можно ошибиться
     user_data["current_score"] += score
     if user_data["current_level"] == 5:
-        update.message.reply_text("Неплохо поиграли! Вы набрали всего {} очков. Если хотите сыграть еще раз, нажмите /start.".format(int(user_data["current_score"])), reply_markup=start_mkup)
+        update.message.reply_text("Неплохо поиграли! Вы набрали всего {} очков."
+                                  " Если хотите сыграть еще раз, нажмите /start."
+                                  .format(int(user_data["current_score"])), reply_markup=start_mkup)
         return ConversationHandler.END
-    update.message.reply_text("Давайте продолжим!",reply_markup=markup)
+    update.message.reply_text("Давайте продолжим!", reply_markup=markup)
     return 1
 
 
 def handle_marker_direction(bot, update, user_data):
-    static_maps = "http://static-maps.yandex.ru/1.x/"
     direction = update.message.text
     vars = {"←": [0, "-"], "→": [0, "+"], "↑": [1, "+"], "↓": [1, "-"]}
     cur_value = user_data["req_params"]["pt"].split(",")
-    exec('cur_value[{}] = str(float(cur_value[{}]) {} float(user_data["koef"]))'.format(vars[direction][0], vars[direction][0], vars[direction][1]))
+    exec('cur_value[{}] = str(float(cur_value[{}]) {} float(user_data["koef"]))'
+         .format(vars[direction][0], vars[direction][0], vars[direction][1]))
     user_data["req_params"]["pt"] = ",".join(cur_value)
     current_value = user_data["req_params"]["ll"].split(",")
-    exec('current_value[{}] = str(float(current_value[{}]) {} float(user_data["koef"]))'.format(vars[direction][0], vars[direction][0], vars[direction][1]))
+    exec('current_value[{}] = str(float(current_value[{}]) {} float(user_data["koef"]))'
+         .format(vars[direction][0], vars[direction][0], vars[direction][1]))
     user_data["req_params"]["ll"] = ",".join(current_value)
     try:
         request = requests.get(static_maps, params=user_data["req_params"])
@@ -249,12 +252,10 @@ def handle_marker_direction(bot, update, user_data):
 
 
 def answer(bot, update, user_data):
-    # toponym_to_find = self.address
-    static_maps = "http://static-maps.yandex.ru/1.x/"
     user_data["req_params"] = {
-        "ll" : "37.620070,55.753630",
-        "pt" : "37.620070,55.753630,pm2bll",
-        "z" : "2",
+        "ll": "37.620070,55.753630",
+        "pt": "37.620070,55.753630,pm2bll",
+        "z": "2",
         "l": "map"
     }
     draw_map(user_data["req_params"])
@@ -268,7 +269,6 @@ def answer(bot, update, user_data):
     return 3
 
 
-
 def main():
     updater = Updater("552209814:AAE-bRvef3IlttwEHSMkxqk-8HZLDuC1d3k")
     dp = updater.dispatcher
@@ -277,8 +277,14 @@ def main():
         entry_points=[CommandHandler("start", start, pass_user_data=True)],
         states={
             1: [CommandHandler("start_game", start_game, pass_user_data=True)],
-            2: [MessageHandler(Filters.text, handle_direction, pass_user_data=True), CommandHandler("answer", answer, pass_user_data=True)],
-            3: [MessageHandler(Filters.text, handle_marker_direction, pass_user_data=True), CommandHandler("Increase_Scale", Increase_Scale, pass_user_data=True), CommandHandler("Decrease_Scale", Decrease_Scale, pass_user_data=True), CommandHandler("Confirm", Confirm, pass_user_data=True)]
+
+            2: [MessageHandler(Filters.text, handle_direction, pass_user_data=True),
+                CommandHandler("answer", answer, pass_user_data=True)],
+
+            3: [MessageHandler(Filters.text, handle_marker_direction, pass_user_data=True),
+                CommandHandler("Increase_Scale", Increase_Scale, pass_user_data=True),
+                CommandHandler("Decrease_Scale", Decrease_Scale, pass_user_data=True),
+                CommandHandler("Confirm", Confirm, pass_user_data=True)]
         },
         fallbacks=[CommandHandler("stop", stop)]
     )
@@ -288,6 +294,7 @@ def main():
     print("Bot started")
     updater.start_polling()
     updater.idle()
+
 
 if __name__ == "__main__":
     main()
