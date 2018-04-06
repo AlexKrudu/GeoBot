@@ -1,9 +1,29 @@
 from telegram.ext import Updater, MessageHandler, Filters, CommandHandler, ConversationHandler
+from telegram import ReplyKeyboardRemove
 from telegram import ReplyKeyboardMarkup
 import requests
 import random
 import sys
 import math
+import os
+from servers import *
+from images import *
+from keyboards import *
+
+
+def draw_panoram(params):
+    try:
+        request = requests.get(google_server, params=params)
+    except Exception as err:
+        print("Произошла какая-то ошибка", err)
+    map_file = panoram_image
+    try:
+        with open(map_file, "wb") as file:
+            file.write(request.content)
+    except IOError as ex:
+        print("Ошибка записи временного файла:", ex)
+        sys.exit(2)
+    return map_file
 
 
 def lonlat_distance(a, b):
@@ -32,30 +52,13 @@ def get_bounds(toponym):
     return delta, delta1
 
 
-starting_keyboard = [["/start"]]
-start_mkup = ReplyKeyboardMarkup(starting_keyboard, one_time_keyboard=True)
-
-reply_keyboard = [['/start_game']]
-markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
-
-
-cont_keyboard = [["/continue"], ["/stop"]]
-cont_markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
-
-
-
 def start(bot, update, user_data):
     user_data["current_level"] = 0
-    update.message.reply_text("Привет! Я - бот GeoGuesser, я вам показываю панораму, а вы должны угадать, в каком месте (на карте) была снята эта панорама. Если вы готовы - нажмите кнопку '/start_game'.", reply_markup=markup)
+    update.message.reply_text("Привет! Я - бот GeoGuesser, я вам показываю панораму,"
+                              " а вы должны угадать, в каком месте (на карте) была снята эта панорама."
+                              " Если вы готовы - нажмите кнопку '/start_game'.", reply_markup=markup)
+
     return 1
-
-
-arrows = [["↑"], ["←", "↓", "→"], ["/answer"]]
-arrow_markup = ReplyKeyboardMarkup(arrows, one_time_keyboard=False)
-
-
-marker = [["↑"], ["←", "↓", "→"], ["/Increase_Scale","/Confirm", "/Decrease_Scale"]]
-markupper =  ReplyKeyboardMarkup(marker, one_time_keyboard=False)
 
 
 def start_game(bot, update, user_data):
@@ -66,30 +69,24 @@ def start_game(bot, update, user_data):
     while True:
         latt = random.uniform(-122.807306,-67.022079)
         lon = random.uniform(31.892418, 48.991140)
-        google_server = "https://maps.googleapis.com/maps/api/streetview?"
-        google_data = "https://maps.googleapis.com/maps/api/streetview/metadata?"
         user_data["current_params"] = {
             "location" : ",".join([str(lon), str(latt)]),
             "key" : "AIzaSyAFrWov6xiIgUQwx9YAiPXcNV2qw7BFuZ0",
             "size" : "640x640",
             "heading" : "0"
         }
-        response = requests.get(google_data, params=user_data["current_params"])
+        try:
+            response = requests.get(google_data, params=user_data["current_params"])
+        except Exception as err:
+            print("Произошла какая-то ошибка", err)
         json_res = response.json()
         if json_res["status"] != "ZERO_RESULTS":
             user_data["result"] = [latt, lon]
-            request = requests.get(google_server, params=user_data["current_params"])
-            map_file = "photos/map.png"
-            try:
-                with open(map_file, "wb") as file:
-                    file.write(request.content)
-            except IOError as ex:
-                print("Ошибка записи временного файла:", ex)
-                sys.exit(2)
+            draw_panoram(user_data["current_params"])
             bot.sendPhoto(
                 update.message.chat.id,  # Идентификатор чата. Куда посылать картинку.
                 # Ссылка на static API по сути является ссылкой на картинку.
-                photo=open(map_file, 'rb'),
+                photo=open(panoram_image, 'rb'),
                 caption="Если вы готовы дать ответ, нажмите кнопку /answer"
              )
             update.message.reply_text("Вы также можете осмотреться, используя стрелки на клавиатуре", reply_markup=arrow_markup)
@@ -97,17 +94,24 @@ def start_game(bot, update, user_data):
 
 
 def help(bot, update):
-    update.message.reply_text("Я - повторюша, дядя Хрюша")
+    update.message.reply_text("This bot was created by Alexandr Krudu. This bot uses Google Street View Image API"
+                              " ('https://developers.google.com/maps/documentation/streetview/intro?hl=ru',"
+                              " Telegram API ('https://core.telegram.org/api'),"
+                              " Yandex Static Maps API ('https://tech.yandex.ru/maps/staticapi/'). Check project repository"
+                              " 'https://github.com/AlexKrudu/GeoBot'."
+                              " Also check original project: 'https://geoguessr.com'! Thank you for using this bot!")
 
 
 def stop(bot, update):
-    update.message.reply_text("Пока, пока!")
+    update.message.reply_text("Пока, пока!", reply_markup=ReplyKeyboardRemove())
+    os.remove(map_image)
+    os.remove(panoram_image)
     return ConversationHandler.END
 
 
 def handle_direction(bot, update, user_data):
+    backup = user_data["current_params"]["location"]
     d = 0.0002
-    google_server = "https://maps.googleapis.com/maps/api/streetview?"
     direction = update.message.text
     if direction == "←":
         if user_data["current_params"]["heading"] == "0":
@@ -118,45 +122,38 @@ def handle_direction(bot, update, user_data):
             user_data["current_params"]["heading"] = "0"
         user_data["current_params"]["heading"] = str(int(user_data["current_params"]["heading"]) + 30)
 
-    elif direction == "↑":
+    else:
         y = d * math.cos(math.radians(int(user_data["current_params"]["heading"])))
         x = d * math.sin(math.radians(int(user_data["current_params"]["heading"])))
+        if direction == "↓":
+            x = -x
+            y = -y
         loc = user_data["current_params"]["location"].split(",")
         loc[0] = float(loc[0]) + y
         loc[1] = float(loc[1]) + x
         user_data["current_params"]["location"] = ",".join([str(i) for i in loc])
 
-    elif direction == "↓":
-        y = - (d * math.cos(math.radians(int(user_data["current_params"]["heading"]))))
-        x = - (d * math.sin(math.radians(int(user_data["current_params"]["heading"]))))
-        loc = user_data["current_params"]["location"].split(",")
-        loc[0] = float(loc[0]) + y
-        loc[1] = float(loc[1]) + x
-        user_data["current_params"]["location"] = ",".join([str(i) for i in loc])
-
-    request = requests.get(google_server, params=user_data["current_params"])
-    map_file = "photos/map.png"
     try:
-        with open(map_file, "wb") as file:
-            file.write(request.content)
-    except IOError as ex:
-        print("Ошибка записи временного файла:", ex)
-        sys.exit(2)
+        response = requests.get(google_data, params=user_data["current_params"])
+    except Exception as err:
+        print("Произошла какая-то ошибка", err)
+    json_res = response.json()
+    if json_res["status"] == "ZERO_RESULTS":
+        update.message.reply_text("Похоже, вы свернули с дороги, панорама не найдена, возвращаемся")
+        user_data["current_params"]["location"] = backup
+
+    draw_panoram(user_data["current_params"])
     bot.sendPhoto(
         update.message.chat.id,  # Идентификатор чата. Куда посылать картинку.
         # Ссылка на static API по сути является ссылкой на картинку.
-        photo=open(map_file, 'rb'),
+        photo=open(panoram_image, 'rb'),
         caption="Если вы готовы дать ответ, нажмите кнопку /answer")
 
-
-def Increase_Scale(bot, update, user_data):
-    static_maps = "http://static-maps.yandex.ru/1.x/"
-    if user_data["req_params"]["z"] == "17":
-        update.message.reply_text("Максимальный масштаб")
-    user_data["koef"] = str(int(user_data["req_params"]["z"]) * float(user_data["koef"]))
-    user_data["req_params"]["z"] = str(int(user_data["req_params"]["z"]) + 1)
-    user_data["koef"] = str(float(user_data["koef"]) / int(user_data["req_params"]["z"]))
-    request = requests.get(static_maps, params=user_data["req_params"])
+def draw_map(params):
+    try:
+        request = requests.get(static_maps, params=params)
+    except Exception as err:
+        print("Произошла какая-то ошибка", err)
     map_file = "photos/yamap.png"
     try:
         with open(map_file, "wb") as file:
@@ -164,55 +161,54 @@ def Increase_Scale(bot, update, user_data):
     except IOError as ex:
         print("Ошибка записи временного файла:", ex)
         sys.exit(2)
+    return map_file
+
+
+def change_scale(direction, user_data):
+    user_data["koef"] = str(int(user_data["req_params"]["z"]) * float(user_data["koef"]))
+    exec('user_data["req_params"]["z"] = str(int(user_data["req_params"]["z"]) {} 1)'.format(direction))
+    user_data["koef"] = str(float(user_data["koef"]) / int(user_data["req_params"]["z"]))
+    return user_data
+
+
+def Increase_Scale(bot, update, user_data):
+    if user_data["req_params"]["z"] == "17":
+        update.message.reply_text("Максимальный масштаб")
+        return None
+    user_data = change_scale("+", user_data)
+    draw_map(user_data["req_params"])
     bot.sendPhoto(
         update.message.chat.id,  # Идентификатор чата. Куда посылать картинку.
         # Ссылка на static API по сути является ссылкой на картинку.
-        photo=open(map_file, 'rb'),
+        photo=open(map_image, 'rb'),
         caption="Если вы готовы подтвердить ответ, нажмите кнопку 'Подтвердить'.")
 
 
 def Decrease_Scale(bot, update, user_data):
-    static_maps = "http://static-maps.yandex.ru/1.x/"
     if user_data["req_params"]["z"] == "1":
         update.message.reply_text("Минимальный масштаб")
-    user_data["koef"] = str(int(user_data["req_params"]["z"]) * float(user_data["koef"]))
-    user_data["req_params"]["z"] = str(int(user_data["req_params"]["z"]) - 1)
-    user_data["koef"] = str(float(user_data["koef"]) / int(user_data["req_params"]["z"]))
-    request = requests.get(static_maps, params=user_data["req_params"])
-    map_file = "photos/yamap.png"
-    try:
-        with open(map_file, "wb") as file:
-            file.write(request.content)
-    except IOError as ex:
-        print("Ошибка записи временного файла:", ex)
-        sys.exit(2)
+        return None
+    user_data = change_scale("-", user_data)
+    draw_map(user_data["req_params"])
     bot.sendPhoto(
         update.message.chat.id,  # Идентификатор чата. Куда посылать картинку.
         # Ссылка на static API по сути является ссылкой на картинку.
-        photo=open(map_file, 'rb'),
-        caption="Если вы готовы подтвердить ответ, нажмите кнопку 'Подтвердить'.")
+        photo=open(map_image, 'rb'),
+        caption="Если вы готовы подтвердить ответ, нажмите кнопку '/Confirm'.")
 
 
 def Confirm(bot, update, user_data):
-    static_maps = "http://static-maps.yandex.ru/1.x/"
     adding = "~" + ",".join([str(i) for i in user_data["result"]]) + ",pm2rdl"
     a = [float(i) for i in user_data["req_params"]["ll"].split(",")]
     mistake = lonlat_distance(a, user_data["result"])
     user_data["req_params"]["pt"] += adding
     del(user_data["req_params"]["z"])
     user_data["req_params"]["pl"] = user_data["req_params"]["ll"] + "," + ",".join([str(i) for i in user_data["result"]])
-    request = requests.get(static_maps, params=user_data["req_params"])
-    map_file = "photos/yamap.png"
-    try:
-        with open(map_file, "wb") as file:
-            file.write(request.content)
-    except IOError as ex:
-        print("Ошибка записи временного файла:", ex)
-        sys.exit(2)
+    draw_map(user_data["req_params"])
     bot.sendPhoto(
         update.message.chat.id,  # Идентификатор чата. Куда посылать картинку.
         # Ссылка на static API по сути является ссылкой на картинку.
-        photo=open(map_file, 'rb'),
+        photo=open(map_image, 'rb'),
         caption="Вы ошиблись на {} километров".format(mistake))
 
     score = round(1 - (mistake / 20000), 2) * 100 # 20000 - это максимальная величина, на которую можно ошибиться
@@ -224,43 +220,20 @@ def Confirm(bot, update, user_data):
     return 1
 
 
-
 def handle_marker_direction(bot, update, user_data):
     static_maps = "http://static-maps.yandex.ru/1.x/"
     direction = update.message.text
-    if direction == "←":
-        cur_value = user_data["req_params"]["pt"].split(",")
-        cur_value[0] = str(float(cur_value[0]) - float(user_data["koef"]))
-        user_data["req_params"]["pt"] = ",".join(cur_value)
-        current_value = user_data["req_params"]["ll"].split(",")
-        current_value[0] = str(float(current_value[0]) - float(user_data["koef"]))
-        user_data["req_params"]["ll"] = ",".join(current_value)
-
-    if direction == "→":
-        cur_value = user_data["req_params"]["pt"].split(",")
-        cur_value[0] = str(float(cur_value[0]) + float(user_data["koef"]))
-        user_data["req_params"]["pt"] = ",".join(cur_value)
-        current_value = user_data["req_params"]["ll"].split(",")
-        current_value[0] = str(float(current_value[0]) + float(user_data["koef"]))
-        user_data["req_params"]["ll"] = ",".join(current_value)
-
-    if direction == "↑":
-        cur_value = user_data["req_params"]["pt"].split(",")
-        cur_value[1] = str(float(cur_value[1]) + float(user_data["koef"]))
-        user_data["req_params"]["pt"] = ",".join(cur_value)
-        current_value = user_data["req_params"]["ll"].split(",")
-        current_value[1] = str(float(current_value[1]) + float(user_data["koef"]))
-        user_data["req_params"]["ll"] = ",".join(current_value)
-
-    if direction == "↓":
-        cur_value = user_data["req_params"]["pt"].split(",")
-        cur_value[1] = str(float(cur_value[1]) - float(user_data["koef"]))
-        user_data["req_params"]["pt"] = ",".join(cur_value)
-        current_value = user_data["req_params"]["ll"].split(",")
-        current_value[1] = str(float(current_value[1]) - float(user_data["koef"]))
-        user_data["req_params"]["ll"] = ",".join(current_value)
-
-    request = requests.get(static_maps, params=user_data["req_params"])
+    vars = {"←": [0, "-"], "→": [0, "+"], "↑": [1, "+"], "↓": [1, "-"]}
+    cur_value = user_data["req_params"]["pt"].split(",")
+    exec('cur_value[{}] = str(float(cur_value[{}]) {} float(user_data["koef"]))'.format(vars[direction][0], vars[direction][0], vars[direction][1]))
+    user_data["req_params"]["pt"] = ",".join(cur_value)
+    current_value = user_data["req_params"]["ll"].split(",")
+    exec('current_value[{}] = str(float(current_value[{}]) {} float(user_data["koef"]))'.format(vars[direction][0], vars[direction][0], vars[direction][1]))
+    user_data["req_params"]["ll"] = ",".join(current_value)
+    try:
+        request = requests.get(static_maps, params=user_data["req_params"])
+    except Exception as err:
+        print("Произошла какая-то ошибка", err)
     map_file = "photos/yamap.png"
     try:
         with open(map_file, "wb") as file:
@@ -284,23 +257,11 @@ def answer(bot, update, user_data):
         "z" : "2",
         "l": "map"
     }
-    try:
-        response = requests.get(static_maps, params=user_data["req_params"])
-        if response:
-            map_file = "yamap.png"
-            try:
-                with open(map_file, "wb") as file:
-                    file.write(response.content)
-            except:
-                print("Ошибка записи временного файла:")
-                sys.exit(2)
-    except:
-        print("Something is wrong!")
-
+    draw_map(user_data["req_params"])
     bot.sendPhoto(
         update.message.chat.id,  # Идентификатор чата. Куда посылать картинку.
         # Ссылка на static API по сути является ссылкой на картинку.
-        photo=open(map_file, 'rb'))
+        photo=open(map_image, 'rb'))
 
     update.message.reply_text("Перемещайте маркер, используя стрелки на клавиатуре", reply_markup=markupper)
     user_data["koef"] = 15
@@ -323,13 +284,9 @@ def main():
     )
 
     dp.add_handler(conv_handler)
-
     dp.add_handler(CommandHandler("help", help))
-
     print("Bot started")
-
     updater.start_polling()
-
     updater.idle()
 
 if __name__ == "__main__":
