@@ -56,7 +56,7 @@ def start(bot, update, user_data):
     update.message.reply_text("Привет! Я - бот GeoGuesser, я вам показываю панораму,"
                               " а вы должны угадать, в каком месте (на карте) была снята эта панорама."
                               " Если вы готовы - нажмите кнопку '/start_game'.", reply_markup=markup)
-            
+
     return 1
 
 
