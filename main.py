@@ -5,9 +5,7 @@ import random
 import sys
 import math
 import os
-from images import *
 from keyboards import *
-from urllib3.contrib.socks import SOCKSProxyManager
 
 
 def set_timer(bot, update, job_queue, chat_data):
